@@ -12,6 +12,20 @@ RunPod Serverless Endpoint (auto-created)
 BlockFlow (optional visual UI)
 ```
 
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- **RunPod account + API key** — [Sign up here](https://get.runpod.io/b08y7oam04si) and create an API key at [Settings → API Keys](https://www.runpod.io/console/user/settings)
+- **S3-compatible storage** — For transferring files between your machine and the GPU workers. Any of these work:
+  - AWS S3
+  - Cloudflare R2
+  - Backblaze B2
+  - MinIO / any S3-compatible service
+- **Python 3.11+** — [python.org/downloads](https://www.python.org/downloads/)
+- **Git** — For cloning the repository
+- **CivitAI API token** *(optional)* — For downloading models from CivitAI. Get one at [civitai.com/user/account](https://civitai.com/user/account)
+
 ## 1️⃣ Install ComfyGen
 
 ComfyGen is the engine that runs ComfyUI workflows on RunPod Serverless.
@@ -92,7 +106,9 @@ Files are downloaded directly to the serverless GPU volume, not your local machi
 
 ## 4️⃣ Run Your First Workflow
 
-Submit a ComfyUI API workflow:
+The setup wizard (`comfy-gen init`) offers to run an example generation at the end (Step 8). It downloads a small SDXL Turbo model and generates a test portrait — a quick way to verify everything works.
+
+To submit your own workflows:
 
 ```bash
 comfy-gen submit workflow.json
