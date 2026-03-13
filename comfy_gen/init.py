@@ -409,10 +409,12 @@ def run(args: argparse.Namespace) -> None:
         template_env["CIVITAI_TOKEN"] = civitai_token
 
     _log("  Creating serverless template...")
+    import uuid
+    template_name = f"comfygen-{uuid.uuid4().hex[:8]}"
     try:
         template = runpod_api.create_template(
             api_key,
-            name="comfygen",
+            name=template_name,
             env=template_env,
         )
     except RuntimeError as e:
