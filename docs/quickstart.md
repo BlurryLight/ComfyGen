@@ -21,15 +21,13 @@ It can be used by:
 - scripts
 - AI agents (Claude Code, Cursor, Codex, Gemini CLI, etc.)
 
-### Install
+### Install (macOS / Linux)
 
 Requires Python 3.11+
 
-**Recommended:**
-
 ```bash
-brew install pipx
-pipx ensurepath
+brew install pipx        # macOS — or: apt install pipx / pip install pipx
+pipx ensurepath          # adds pipx bin dir to PATH (restart your shell after)
 
 git clone https://github.com/Hearmeman24/ComfyGen.git
 cd ComfyGen
@@ -37,7 +35,23 @@ pipx install --editable .
 pipx inject comfy-gen boto3
 ```
 
-After installation you can run:
+### Install (Windows)
+
+Requires Python 3.11+ — make sure **"Add Python to PATH"** is checked during installation.
+
+```powershell
+pip install pipx
+pipx ensurepath          # restart your terminal after this
+
+git clone https://github.com/Hearmeman24/ComfyGen.git
+cd ComfyGen
+pipx install --editable .
+pipx inject comfy-gen boto3
+```
+
+> **If `comfy-gen` is not found after install:** add Python's `Scripts` directory to your PATH manually (e.g. `C:\Users\<you>\AppData\Local\Programs\Python\Python3xx\Scripts`).
+
+### Verify
 
 ```bash
 comfy-gen --help
@@ -143,6 +157,14 @@ Use when you want:
 - media viewing and upscaling
 - human-in-the-loop workflows
 
+## 📖 Full Documentation
+
+**Before you start, please read the full ComfyGen README carefully:**
+
+**https://github.com/Hearmeman24/ComfyGen#readme**
+
+It covers everything in detail — configuration options, storage providers, workflow format, output format, model downloads, error handling, and more. Taking 10 minutes to read it will save you hours of troubleshooting.
+
 ## ⚠️ Important
 
 These tools are 100% free and open source.
@@ -150,5 +172,5 @@ They are still BETA, so expect bugs and rough edges.
 
 ## Repositories
 
+- **ComfyGen**: https://github.com/Hearmeman24/ComfyGen — **[Read the full README](https://github.com/Hearmeman24/ComfyGen#readme)**
 - **BlockFlow**: https://github.com/Hearmeman24/BlockFlow
-- **ComfyGen**: https://github.com/Hearmeman24/ComfyGen
