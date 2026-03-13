@@ -173,7 +173,11 @@ def create_endpoint(
     execution_timeout_ms: int = 600000,
     env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Create a serverless endpoint from a template.
+    """Create a serverless endpoint from a template, then patch env vars.
+
+    RunPod creates a copy of the template for each endpoint. We create
+    the endpoint using the base template (preserving commission tracking),
+    then PATCH the copied template with the user's env vars.
 
     Args:
         api_key: RunPod API key.
@@ -184,12 +188,12 @@ def create_endpoint(
         workers_max: Maximum concurrent workers.
         idle_timeout: Seconds idle before scale-down.
         execution_timeout_ms: Max milliseconds per job.
-        env: Environment variables for workers (overrides template env).
+        env: Environment variables for workers.
 
     Returns:
         Dict with id, name, gpuTypeIds, networkVolumeId, etc.
     """
-    body: dict[str, Any] = {
+    endpoint = _rest(api_key, "POST", "/endpoints", {
         "name": name,
         "templateId": template_id,
         "gpuTypeIds": gpu_type_ids,
@@ -202,10 +206,15 @@ def create_endpoint(
         "scalerType": "QUEUE_DELAY",
         "scalerValue": 4,
         "executionTimeoutMs": execution_timeout_ms,
-    }
+    })
+
+    # Patch the endpoint's template copy with user env vars
     if env:
-        body["env"] = env
-    return _rest(api_key, "POST", "/endpoints", body)
+        ep_template_id = endpoint.get("templateId", "")
+        if ep_template_id:
+            _rest(api_key, "PATCH", f"/templates/{ep_template_id}", {"env": env})
+
+    return endpoint
 
 
 def get_endpoint(api_key: str, endpoint_id: str) -> dict[str, Any]:
