@@ -35,8 +35,9 @@ def _graphql(api_key: str, query: str) -> dict[str, Any]:
     except urllib.error.HTTPError as e:
         body = e.read().decode(errors="replace")[:500]
         raise RuntimeError(f"RunPod GraphQL API returned {e.code}: {body}")
-    if "errors" in resp and not resp.get("data"):
-        raise RuntimeError(f"RunPod GraphQL error: {resp['errors'][0].get('message', 'Unknown error')}")
+    if "errors" in resp:
+        msg = resp["errors"][0].get("message", "Unknown error")
+        raise RuntimeError(f"RunPod GraphQL error: {msg}")
     return resp.get("data", {})
 
 
@@ -124,17 +125,22 @@ def create_template(
     """
     # REST API has a bug: it applies default volumeInGb=20 to serverless
     # templates then rejects it. Use GraphQL instead.
+    def _escape_gql(s: str) -> str:
+        """Escape a string for embedding in a GraphQL double-quoted string."""
+        return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
     env_gql = ""
     if env:
         entries = ", ".join(
-            f'{{ key: "{k}", value: "{v}" }}' for k, v in env.items()
+            f'{{ key: "{_escape_gql(k)}", value: "{_escape_gql(v)}" }}'
+            for k, v in env.items()
         )
         env_gql = f"env: [{entries}]"
 
     query = f"""
     mutation {{
       saveTemplate(input: {{
-        name: "{name}"
+        name: "{_escape_gql(name)}"
         imageName: "{BASE_DOCKER_IMAGE}"
         isServerless: true
         containerDiskInGb: 5
@@ -150,7 +156,10 @@ def create_template(
     }}
     """
     data = _graphql(api_key, query)
-    return data.get("saveTemplate", {})
+    result = data.get("saveTemplate")
+    if not result or "id" not in result:
+        raise RuntimeError(f"Template creation returned unexpected response: {data}")
+    return result
 
 
 def create_endpoint(
