@@ -44,6 +44,7 @@ The CLI is installed system-wide via `pip install -e .` from the ComfyGen repo d
 | `comfy-gen download` | Download models to the RunPod network volume (CivitAI or direct URL) |
 | `comfy-gen status` | Check job status |
 | `comfy-gen cancel` | Cancel a running/queued job |
+| `comfy-gen list` | List model files on the RunPod network volume |
 | `comfy-gen config` | Read/write persistent configuration |
 
 ---
@@ -337,6 +338,40 @@ Possible statuses: `in_queue`, `in_progress`, `completed`, `failed`, `cancelled`
 ```bash
 comfy-gen cancel <job-id>
 ```
+
+---
+
+## List Models
+
+List model files installed on the RunPod network volume. Submits a lightweight job to a worker which scans the filesystem and returns results.
+
+```bash
+# List LoRAs (default)
+comfy-gen list loras
+
+# List checkpoints
+comfy-gen list checkpoints
+
+# List other model types
+comfy-gen list diffusion_models
+comfy-gen list vae
+comfy-gen list text_encoders
+```
+
+**Result:**
+```json
+{
+  "ok": true,
+  "model_type": "loras",
+  "files": [
+    {"filename": "my_lora.safetensors", "path": "/runpod-volume/ComfyUI/models/loras/my_lora.safetensors", "size_mb": 228.5}
+  ],
+  "search_paths": ["/ComfyUI/models/loras", "/runpod-volume/ComfyUI/models/loras"],
+  "job_id": "abc-123-def"
+}
+```
+
+Scans both `/ComfyUI/models/<type>` and `/runpod-volume/ComfyUI/models/<type>`, plus any paths from `extra_model_paths.yaml`.
 
 ---
 

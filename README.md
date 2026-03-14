@@ -202,6 +202,29 @@ comfy-gen download --batch models.json
 }
 ```
 
+### `comfy-gen list [model_type]`
+
+List model files installed on the RunPod network volume. Submits a lightweight job to a worker which scans the filesystem.
+
+```bash
+comfy-gen list loras              # List LoRAs (default)
+comfy-gen list checkpoints        # List checkpoints
+comfy-gen list diffusion_models   # List diffusion models
+```
+
+**Result:**
+```json
+{
+  "ok": true,
+  "model_type": "loras",
+  "files": [
+    {"filename": "my_lora.safetensors", "path": "/runpod-volume/ComfyUI/models/loras/my_lora.safetensors", "size_mb": 228.5}
+  ],
+  "search_paths": ["/ComfyUI/models/loras", "/runpod-volume/ComfyUI/models/loras"],
+  "job_id": "abc-123-def"
+}
+```
+
 ## Getting Models onto Your Volume
 
 There are two ways to populate your RunPod network volume with models:

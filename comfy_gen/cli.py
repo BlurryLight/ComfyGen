@@ -121,6 +121,18 @@ def cmd_download(args: argparse.Namespace) -> None:
     sys.exit(0)
 
 
+def cmd_list(args: argparse.Namespace) -> None:
+    from comfy_gen import list_models
+
+    result = list_models.submit_list(
+        model_type=args.model_type,
+        timeout=args.timeout or 60,
+        endpoint_id=getattr(args, "endpoint_id", None),
+    )
+    print(json.dumps(result))
+    sys.exit(0)
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     from comfy_gen import init
     init.run(args)
@@ -383,6 +395,50 @@ def main() -> None:
     p_cancel.add_argument("job_id", help="RunPod job ID to cancel")
     p_cancel.add_argument("--endpoint-id", metavar="ID", help="RunPod endpoint ID (overrides config)")
 
+    # list
+    p_list = subparsers.add_parser(
+        "list",
+        help="List model files on the RunPod network volume",
+        description=(
+            "List model files installed on the RunPod network volume by submitting\n"
+            "a lightweight job to the serverless endpoint. Scans both the baked-in\n"
+            "ComfyUI models directory and the network volume, plus any paths from\n"
+            "extra_model_paths.yaml.\n"
+            "\n"
+            "Supported model types (subfolder under models/):\n"
+            "  loras              LoRA models (default)\n"
+            "  checkpoints        SD, SDXL, Flux, Wan, etc.\n"
+            "  vae                VAE models\n"
+            "  clip               CLIP models\n"
+            "  diffusion_models   Diffusion model weights\n"
+            "  text_encoders      Text encoder weights\n"
+            "  controlnet         ControlNet models\n"
+            "  upscale_models     Upscaler models\n"
+            "  embeddings         Text embeddings\n"
+            "\n"
+            "Output JSON fields:\n"
+            "  ok                 true on success\n"
+            "  model_type         The model type queried\n"
+            "  files              Array of {filename, path, size_mb}\n"
+            "  search_paths       Directories that were scanned\n"
+            "  job_id             RunPod job ID\n"
+            "\n"
+            "Examples:\n"
+            "  comfy-gen list loras\n"
+            "  comfy-gen list checkpoints\n"
+            "  comfy-gen list diffusion_models --endpoint-id abc123\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_list.add_argument(
+        "model_type", nargs="?", default="loras",
+        help="Model type to list (default: loras)",
+    )
+    p_list.add_argument(
+        "--timeout", type=int, help="Max seconds to wait for completion (default: 60)",
+    )
+    p_list.add_argument("--endpoint-id", metavar="ID", help="RunPod endpoint ID (overrides config)")
+
     args = parser.parse_args()
 
     try:
@@ -393,6 +449,7 @@ def main() -> None:
             "download": cmd_download,
             "status": cmd_status,
             "cancel": cmd_cancel,
+            "list": cmd_list,
         }[args.command](args)
     except ValueError as e:
         output.error(str(e))
