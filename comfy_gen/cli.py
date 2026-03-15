@@ -133,6 +133,17 @@ def cmd_list(args: argparse.Namespace) -> None:
     sys.exit(0)
 
 
+def cmd_info(args: argparse.Namespace) -> None:
+    from comfy_gen import query_info
+
+    result = query_info.submit_query(
+        timeout=args.timeout or 60,
+        endpoint_id=getattr(args, "endpoint_id", None),
+    )
+    print(json.dumps(result))
+    sys.exit(0)
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     from comfy_gen import init
     init.run(args)
@@ -439,6 +450,32 @@ def main() -> None:
     )
     p_list.add_argument("--endpoint-id", metavar="ID", help="RunPod endpoint ID (overrides config)")
 
+    # info
+    p_info = subparsers.add_parser(
+        "info",
+        help="Query available samplers and schedulers from ComfyUI",
+        description=(
+            "Query the remote ComfyUI instance for available samplers and schedulers.\n"
+            "Submits a lightweight job that hits ComfyUI's /object_info endpoint\n"
+            "and extracts the sampler/scheduler options from KSampler.\n"
+            "\n"
+            "Output JSON fields:\n"
+            "  ok                 true on success\n"
+            "  samplers           Array of available sampler names\n"
+            "  schedulers         Array of available scheduler names\n"
+            "  job_id             RunPod job ID\n"
+            "\n"
+            "Examples:\n"
+            "  comfy-gen info\n"
+            "  comfy-gen info --endpoint-id abc123\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_info.add_argument(
+        "--timeout", type=int, help="Max seconds to wait for completion (default: 60)",
+    )
+    p_info.add_argument("--endpoint-id", metavar="ID", help="RunPod endpoint ID (overrides config)")
+
     args = parser.parse_args()
 
     try:
@@ -450,6 +487,7 @@ def main() -> None:
             "status": cmd_status,
             "cancel": cmd_cancel,
             "list": cmd_list,
+            "info": cmd_info,
         }[args.command](args)
     except ValueError as e:
         output.error(str(e))
