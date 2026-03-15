@@ -8,6 +8,7 @@ the CLI — all other commands are agent-first / non-interactive.
 import argparse
 import getpass
 import json
+import os
 import sys
 import time
 from typing import Any
@@ -123,9 +124,13 @@ def _test_storage(s3_config: dict[str, str]) -> None:
         Params={"Bucket": bucket, "Key": test_key},
         ExpiresIn=60,
     )
-    with tempfile.NamedTemporaryFile() as tmp:
+    tmp = tempfile.NamedTemporaryFile(delete=False)
+    tmp.close()
+    try:
         urllib.request.urlretrieve(url, tmp.name)
         downloaded = open(tmp.name, "rb").read()
+    finally:
+        os.unlink(tmp.name)
 
     if downloaded != test_data:
         raise RuntimeError("Downloaded content does not match uploaded content")
@@ -363,6 +368,9 @@ def run(args: argparse.Namespace) -> None:
 
     volume_size = getattr(args, "volume_size", None) or DEFAULT_VOLUME_SIZE
     if not non_interactive:
+        _log("  Models are stored on a persistent network volume attached to your workers.")
+        _log(f"  {DEFAULT_VOLUME_SIZE}GB is recommended — enough for 3-5 different workflows/use cases.")
+        _log("  Choose less to save money. You can resize later in the RunPod dashboard.\n")
         size_input = _prompt(f"Volume size in GB", default=str(DEFAULT_VOLUME_SIZE))
         try:
             volume_size = int(size_input)
@@ -408,31 +416,51 @@ def run(args: argparse.Namespace) -> None:
     if civitai_token:
         template_env["CIVITAI_TOKEN"] = civitai_token
 
-    _log("  Creating serverless template...")
     import uuid
-    template_name = f"comfygen-{uuid.uuid4().hex[:8]}"
-    try:
-        template = runpod_api.create_template(
-            api_key,
-            name=template_name,
-            env=template_env,
-        )
-    except RuntimeError as e:
-        output.error(f"Failed to create template: {e}")
 
-    template_id = template["id"]
+    while True:
+        _log("  Creating serverless template...")
+        template_name = f"comfygen-{uuid.uuid4().hex[:8]}"
+        try:
+            template = runpod_api.create_template(
+                api_key,
+                name=template_name,
+                env=template_env,
+            )
+        except RuntimeError as e:
+            if non_interactive:
+                output.error(f"Failed to create template: {e}")
+            _log(f"\n  ✗ Failed to create template: {e}")
+            _log("  This can happen if you've hit a RunPod resource limit.")
+            _log("  Fix the issue in your RunPod dashboard, then try again.\n")
+            retry = _prompt("Retry? [Y/n]", default="Y")
+            if retry.lower() in ("n", "no"):
+                output.error(f"Failed to create template: {e}")
+            continue
 
-    _log("  Creating serverless endpoint...")
-    try:
-        endpoint = runpod_api.create_endpoint(
-            api_key,
-            name="comfygen",
-            template_id=template_id,
-            gpu_type_ids=tier["gpu_ids"],
-            volume_id=volume_id,
-        )
-    except RuntimeError as e:
-        output.error(f"Failed to create endpoint: {e}")
+        template_id = template["id"]
+
+        _log("  Creating serverless endpoint...")
+        try:
+            endpoint = runpod_api.create_endpoint(
+                api_key,
+                name="comfygen",
+                template_id=template_id,
+                gpu_type_ids=tier["gpu_ids"],
+                volume_id=volume_id,
+            )
+        except RuntimeError as e:
+            if non_interactive:
+                output.error(f"Failed to create endpoint: {e}")
+            _log(f"\n  ✗ Failed to create endpoint: {e}")
+            _log("  This can happen if you've hit a RunPod worker or endpoint limit.")
+            _log("  Fix the issue in your RunPod dashboard, then try again.\n")
+            retry = _prompt("Retry? [Y/n]", default="Y")
+            if retry.lower() in ("n", "no"):
+                output.error(f"Failed to create endpoint: {e}")
+            continue
+
+        break
 
     endpoint_id = endpoint["id"]
     if not non_interactive:
