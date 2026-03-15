@@ -22,6 +22,7 @@ Introduce yourself to the user:
 > - **Get models onto your volume** — I'll analyze your workflow, find the models on HuggingFace/CivitAI, and download them for you
 > - **Run workflows** — submit ComfyUI workflows, track progress, and deliver output URLs
 > - **Manage jobs** — check status, cancel, override parameters, map input files
+> - **Query endpoint** — list available samplers, schedulers, and LoRAs on the remote endpoint
 >
 > If you have a workflow JSON, share it and I'll take it from there — I'll figure out what models you need and handle everything.
 
@@ -44,7 +45,8 @@ The CLI is installed system-wide via `pip install -e .` from the ComfyGen repo d
 | `comfy-gen download` | Download models to the RunPod network volume (CivitAI or direct URL) |
 | `comfy-gen status` | Check job status |
 | `comfy-gen cancel` | Cancel a running/queued job |
-| `comfy-gen list` | List model files on the RunPod network volume |
+| `comfy-gen list` | List model files on the RunPod network volume (by type) |
+| `comfy-gen info` | Query available samplers, schedulers, and LoRAs from the endpoint |
 | `comfy-gen config` | Read/write persistent configuration |
 
 ---
@@ -57,11 +59,13 @@ comfy-gen init
 
 Interactive wizard that:
 1. Validates RunPod API key
-2. Lets user pick a GPU tier (Budget/Recommended/Performance)
-3. Creates a network volume for models
-4. Creates a serverless endpoint
-5. Configures S3-compatible storage
-6. Optionally saves CivitAI API token
+2. Configures S3-compatible storage (with upload/download connectivity test)
+3. Optionally saves CivitAI API token
+4. Lets user pick a GPU tier (Budget/Recommended/Performance)
+5. Creates a network volume for models (200GB default, recommended for 3-5 use cases)
+6. Creates a serverless template + endpoint (retries on failure — e.g. worker limits)
+7. Waits for endpoint readiness (workers pull Docker image, ~15-20 min first time)
+8. Optionally runs an example generation (downloads SDXL Turbo + generates a test portrait)
 
 Non-interactive mode for automation:
 ```bash
@@ -122,6 +126,7 @@ For each model filename found in the workflow, **proactively search HuggingFace*
    - **SDXL**: `stabilityai/stable-diffusion-xl-*`
    - **SD 1.5**: `stable-diffusion-v1-5/stable-diffusion-v1-5`
    - **T5/CLIP text encoders**: `Comfy-Org/`, `google/t5-*`, `openai/clip-*`
+   - **Qwen Image**: `Comfy-Org/Qwen-Image_ComfyUI`
    - **Upscalers**: `Sirosky/Upscale-*`
 4. **Construct direct download URLs** — HuggingFace format:
    `https://huggingface.co/<org>/<repo>/resolve/main/<path_to_file>`
@@ -301,6 +306,8 @@ comfy-gen download --batch downloads.json
 
 **CivitAI version ID**: Found on the CivitAI model page URL. It's the version-specific ID, NOT the top-level model ID.
 
+**Pre-signed URLs**: `comfy-gen download url` works with pre-signed S3/R2 URLs (query params are passed through to the HTTP request). Use `--filename` to set a clean filename since the URL contains auth params.
+
 **Batch file format:**
 ```json
 [
@@ -341,37 +348,59 @@ comfy-gen cancel <job-id>
 
 ---
 
-## List Models
+## Query Endpoint Info
 
-List model files installed on the RunPod network volume. Submits a lightweight job to a worker which scans the filesystem and returns results.
+Query the remote endpoint for all dynamic configuration values in a single call. Returns available samplers, schedulers, and installed LoRAs — consolidated because these are dynamic values that the BlockFlow UI uses to populate dropdowns.
 
 ```bash
-# List LoRAs (default)
-comfy-gen list loras
-
-# List checkpoints
-comfy-gen list checkpoints
-
-# List other model types
-comfy-gen list diffusion_models
-comfy-gen list vae
-comfy-gen list text_encoders
+comfy-gen info
+comfy-gen info --endpoint-id abc123
 ```
 
 **Result:**
 ```json
 {
   "ok": true,
-  "model_type": "loras",
-  "files": [
+  "samplers": ["euler", "euler_ancestral", "heun", "dpmpp_2m", "dpmpp_2m_sde", "ddim", "uni_pc", "..."],
+  "schedulers": ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "beta"],
+  "loras": [
     {"filename": "my_lora.safetensors", "path": "/runpod-volume/ComfyUI/models/loras/my_lora.safetensors", "size_mb": 228.5}
   ],
-  "search_paths": ["/ComfyUI/models/loras", "/runpod-volume/ComfyUI/models/loras"],
   "job_id": "abc-123-def"
 }
 ```
 
-Scans both `/ComfyUI/models/<type>` and `/runpod-volume/ComfyUI/models/<type>`, plus any paths from `extra_model_paths.yaml`.
+Use this when you need to know what samplers/schedulers are available, or to get a quick LoRA inventory.
+
+---
+
+## List Models
+
+List model files on the RunPod network volume by type. Use this for any model type (checkpoints, vae, clip, etc.). For LoRAs specifically, `comfy-gen info` is preferred as it also returns samplers/schedulers.
+
+```bash
+comfy-gen list checkpoints
+comfy-gen list diffusion_models
+comfy-gen list vae
+comfy-gen list clip
+comfy-gen list text_encoders
+comfy-gen list loras              # works, but prefer comfy-gen info for loras
+```
+
+**Result:**
+```json
+{
+  "ok": true,
+  "model_type": "checkpoints",
+  "files": [
+    {"filename": "model.safetensors", "path": "/runpod-volume/ComfyUI/models/checkpoints/model.safetensors", "size_mb": 6938.2}
+  ],
+  "search_paths": ["/ComfyUI/models/checkpoints", "/runpod-volume/ComfyUI/models/checkpoints"],
+  "job_id": "abc-123-def"
+}
+```
+
+Scans `/ComfyUI/models/<type>`, `/runpod-volume/ComfyUI/models/<type>`, and any paths from `extra_model_paths.yaml`.
 
 ---
 
@@ -423,7 +452,7 @@ If a transient error occurs (network, cold start), retry once after a short dela
 - The submit command blocks until completion or timeout.
 - Workflow must be **ComfyUI API format** — export via "Save (API Format)" in ComfyUI UI.
 - The serverless worker auto-installs missing custom nodes from the workflow.
-- Output S3 URLs are permanent direct links — no authentication or expiry needed.
+- Output URLs are pre-signed S3 links with 7-day expiry.
 - **Security**: Never commit, display, or log API keys found in workflow JSONs (e.g., OpenRouter keys).
 - For video workflows, always increase timeout (`--timeout 900` or more).
 - Models must be on the network volume. Use `comfy-gen download` to populate it — or use the [model resolution workflow](#workflow-analysis--model-resolution--always-do-this-first) to find and download everything automatically.
