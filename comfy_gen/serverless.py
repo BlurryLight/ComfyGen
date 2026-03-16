@@ -338,6 +338,25 @@ def submit(
             stage = prog.get("stage", "")
             completed = prog.get("completed_nodes")
             total = prog.get("total_nodes")
+            exec_time_ms = resp.get("executionTime", 0)
+
+            # Detect stuck jobs: RunPod sometimes fails to transition
+            # jobs from IN_PROGRESS to COMPLETED/FAILED. If execution
+            # time exceeds 60s but progress hasn't moved past early
+            # stages, the worker likely errored and the status update
+            # was lost. Check for error in output or treat as failed.
+            if exec_time_ms > 60000:
+                # Check if output contains an error from our handler
+                error_msg = prog.get("error_message")
+                if error_msg:
+                    raise RuntimeError(error_msg)
+                # If stuck at a pre-execution stage, the worker errored
+                if stage in ("queue", "node_check", "init", "download_inputs"):
+                    raise RuntimeError(
+                        f"Job appears stuck (execution time {exec_time_ms // 1000}s "
+                        f"but still at '{stage}'). The worker likely encountered an error "
+                        f"that RunPod failed to report. Check worker logs or retry."
+                    )
 
             # Build node progress prefix from structured fields
             node_prefix = f"({completed}/{total}) " if completed and total else ""
