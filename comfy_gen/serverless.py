@@ -255,6 +255,11 @@ def submit(
             worker_output["delay_seconds"] = delay
             worker_output["elapsed_seconds"] = exec_time
 
+            # Handler returned a structured error (ok: false)
+            if not worker_output.get("ok", True):
+                error_msg = worker_output.get("error", "Unknown error")
+                raise RuntimeError(error_msg)
+
             url = worker_output.get("output", {}).get("url", "")
             ext = url.rsplit(".", 1)[-1].lower() if url else ""
             media_type = "video" if ext in ("mp4", "webm", "avi", "mov", "mkv", "gif") else "image"
