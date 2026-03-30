@@ -5,6 +5,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,98 @@ def _upload_input(local_path: str, cfg: dict | None = None) -> str:
     """Upload a local file and return a URL the worker can download from."""
     from comfy_gen import storage
     return storage.upload_input(local_path, config=cfg)
+
+
+def _download_output(url: str, dest_dir: str, job_id: str | None = None) -> str:
+    """Download the primary output URL to a local directory.
+
+    The saved filename is derived from the URL path and prefixed with the job id
+    when available so repeated runs do not overwrite each other.
+    """
+    parsed = urlparse(url)
+    filename = Path(unquote(parsed.path)).name or "output.png"
+    if job_id:
+        filename = f"{job_id}_{filename}"
+
+    out_dir = Path(dest_dir).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / filename
+    urllib.request.urlretrieve(url, out_path)
+    return str(out_path)
+
+
+def _normalize_outputs(
+    worker_output: dict[str, Any],
+    save_output_dir: str | None = None,
+    job_id: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Normalize single- and multi-output worker responses.
+
+    Keeps backward compatibility by preserving ``output.url`` as the first
+    output while also exposing every generated artifact under
+    ``output.outputs``.
+    """
+    output_data = worker_output.setdefault("output", {})
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _media_type_from_url(url: str) -> str:
+        ext = urlparse(url).path.rsplit(".", 1)[-1].lower() if url else ""
+        return "video" if ext in ("mp4", "webm", "avi", "mov", "mkv", "gif") else "image"
+
+    def _push(candidate: Any, default_media_type: str | None = None) -> None:
+        if not isinstance(candidate, dict):
+            return
+
+        url = candidate.get("url", "")
+        path = candidate.get("path", "")
+        if not url and not path:
+            return
+
+        key = ("url", url) if url else ("path", path)
+        if key in seen:
+            return
+        seen.add(key)
+
+        item = dict(candidate)
+        item.setdefault("media_type", default_media_type or _media_type_from_url(url))
+        normalized.append(item)
+
+    primary_url = output_data.get("url", "")
+    if primary_url:
+        _push({"url": primary_url}, None)
+
+    for key in ("outputs", "images", "videos"):
+        values = output_data.get(key, [])
+        if isinstance(values, list):
+            for item in values:
+                _push(item, "video" if key == "videos" else "image")
+
+    for key in ("outputs", "images", "videos"):
+        values = worker_output.get(key, [])
+        if isinstance(values, list):
+            for item in values:
+                _push(item, "video" if key == "videos" else "image")
+
+    urls = output_data.get("urls", [])
+    if isinstance(urls, list):
+        for url in urls:
+            if isinstance(url, str) and url:
+                _push({"url": url}, None)
+
+    if save_output_dir:
+        for item in normalized:
+            url = item.get("url", "")
+            if url and not item.get("local_path"):
+                item["local_path"] = _download_output(url, save_output_dir, job_id=job_id)
+
+    if normalized:
+        output_data["outputs"] = normalized
+        output_data["url"] = normalized[0].get("url", output_data.get("url", ""))
+        if normalized[0].get("local_path"):
+            output_data["local_path"] = normalized[0]["local_path"]
+
+    return worker_output, normalized
 
 
 def _detect_file_inputs(workflow: dict) -> dict[str, dict]:
@@ -172,6 +265,7 @@ def submit(
     overrides: dict[str, dict] | None = None,
     timeout: int = 1200,
     poll_interval: int = 3,
+    save_output_dir: str | None = None,
     endpoint_id: str | None = None,
 ) -> dict[str, Any]:
     """Submit a workflow to the serverless endpoint.
@@ -307,14 +401,21 @@ def submit(
             if worker_output.get("error_type") or not worker_output.get("ok", True):
                 return worker_output
 
-            url = worker_output.get("output", {}).get("url", "")
-            ext = url.rsplit(".", 1)[-1].lower() if url else ""
-            media_type = "video" if ext in ("mp4", "webm", "avi", "mov", "mkv", "gif") else "image"
+            worker_output, normalized_outputs = _normalize_outputs(
+                worker_output,
+                save_output_dir=save_output_dir,
+                job_id=job_id,
+            )
+            output_count = max(len(normalized_outputs), 1)
+            media_types = {item.get("media_type", "image") for item in normalized_outputs} or {"image"}
+            media_label = "output" if len(media_types) > 1 else next(iter(media_types))
             output.log(
                 f"Completed in {exec_time}s "
                 f"(+{delay}s queue). "
-                f"1 {media_type}"
+                f"{output_count} {media_label}{'' if output_count == 1 else 's'}"
             )
+            if save_output_dir and normalized_outputs:
+                output.log(f"Saved {len(normalized_outputs)} output(s) to {save_output_dir}")
             return worker_output
 
         elif status == "FAILED":
@@ -377,6 +478,7 @@ def status(job_id: str, endpoint_id: str | None = None) -> dict[str, Any]:
 
     if runpod_status == "COMPLETED":
         worker_output = resp.get("output", {})
+        worker_output, _ = _normalize_outputs(worker_output)
         result.update(worker_output)
         result["delay_seconds"] = resp.get("delayTime", 0) // 1000
         result["elapsed_seconds"] = resp.get("executionTime", 0) // 1000

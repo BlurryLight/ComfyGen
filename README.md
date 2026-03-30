@@ -129,6 +129,12 @@ Completed in 27s (+2s queue). 1 image
   "ok": true,
   "output": {
     "url": "https://bucket.s3.region.amazonaws.com/comfy-gen/outputs/abc123.png",
+    "outputs": [
+      {
+        "url": "https://bucket.s3.region.amazonaws.com/comfy-gen/outputs/abc123.png",
+        "media_type": "image"
+      }
+    ],
     "seed": 1027836870258818,
     "resolution": {"width": 828, "height": 1248},
     "model_hashes": {
@@ -148,6 +154,7 @@ Completed in 27s (+2s queue). 1 image
 - `--override NODE_ID.PARAM=VALUE` for parameter overrides — repeatable, auto-coerces numbers
 - Real-time progress with stage, step count, and percentage
 - Output metadata stripped (no embedded workflow data in images)
+- Multi-image runs return every artifact under `output.outputs` while keeping the first one at `output.url`
 - Returns model hashes (SHA256), types, and LoRA strengths
 
 ### `comfy-gen status <job-id>`
@@ -321,13 +328,16 @@ All commands output JSON to **stdout**. Human-readable progress goes to **stderr
 # Extract just the output URL
 comfy-gen submit workflow.json 2>/dev/null | jq -r '.output.url'
 
+# Extract all output URLs
+comfy-gen submit workflow.json 2>/dev/null | jq -r '.output.outputs[].url'
+
 # Save output URL to a variable
 URL=$(comfy-gen submit workflow.json 2>/dev/null | jq -r '.output.url')
 ```
 
 **Success** exits with code `0`:
 ```json
-{"ok": true, "output": {"url": "...", "seed": 42, "resolution": {"width": 1024, "height": 1024}}, "job_id": "...", "elapsed_seconds": 30}
+{"ok": true, "output": {"url": "...", "outputs": [{"url": "...", "media_type": "image"}], "seed": 42, "resolution": {"width": 1024, "height": 1024}}, "job_id": "...", "elapsed_seconds": 30}
 ```
 
 **Error** exits with code `1`:

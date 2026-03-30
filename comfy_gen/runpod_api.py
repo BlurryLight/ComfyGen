@@ -14,7 +14,7 @@ REST_BASE = "https://rest.runpod.io/v1"
 
 BASE_TEMPLATE_ID = "bdy0gkebsg"
 BASE_DOCKER_IMAGE = "hearmeman/comfyui-serverless:v17"
-RUNTIME_REPO_URL = "https://github.com/Hearmeman24/remote-comfy-gen-handler.git"
+RUNTIME_REPO_URL = "https://github.com/BlurryLight/remote-comfy-gen-handler.git"
 # Docker image is CUDA 12.8.1 — only accept 12.8+
 ALLOWED_CUDA_VERSIONS = ["12.9", "12.8"]
 
